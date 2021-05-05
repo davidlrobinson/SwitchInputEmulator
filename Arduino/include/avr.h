@@ -20,11 +20,24 @@
 #define SERIAL_UBBRVAL(Baud)    ((((F_CPU / 16) + (Baud / 2)) / (Baud)) - 1)
 #define PRINT_DEBUG(...)
 
+// Teensy 2.0: LED is active high
+#if defined(__AVR_ATmega32U4__) || defined(__AVR_AT90USB1286__)
+#define LED_ON		(PORTD |= (1<<6))
+#define LED_OFF		(PORTD &= ~(1<<6))
+#define LED_TOGGLE	(PORTD ^= (1<<6))
+#define LED_CONFIG	(DDRD |= (1<<6))
+#else
+#define LED_ON	
+#define LED_OFF
+#define LED_TOGGLE
+#define LED_CONFIG
+#endif
+
 // Initializes the USART, note that the RX/TX interrupts need to be enabled manually.
 void USART_Init(int baud) {
     UCSR1A = 0;                         // disable double speed mode
     UCSR1C = _BV(UCSZ11) | _BV(UCSZ10); // no parity, 8 data bits, 1 stop bit
-    UCSR1D = 0;                         // no cts, no rts
+    // UCSR1D = 0;                         // no cts, no rts
     UBRR1  = SERIAL_UBBRVAL(baud);      // set baud rate
     UCSR1B = _BV(RXEN1) | _BV(TXEN1);   // enable RX and TX
     DDRD  |= _BV(3);                    // set TX pin as output

@@ -38,8 +38,10 @@ USB_Input_Packet_t usbInput;
 USB_JoystickReport_Input_t buffer;
 USB_JoystickReport_Input_t defaultBuf;
 State_t state = OUT_OF_SYNC;
+bool send_USB_ack = false;
 
 ISR(USART1_RX_vect) {
+    // LED_TOGGLE;
     uint8_t b = recv_byte();
     if (state == SYNC_START) {
         if (b == COMMAND_SYNC_1) {
@@ -82,6 +84,8 @@ ISR(USART1_RX_vect) {
                 buffer.RX = usbInput.input[5];
                 buffer.RY = usbInput.input[6];
                 buffer.VendorSpec = usbInput.input[7];
+                send_USB_ack = true;
+                HID_Task();
                 // send_byte(RESP_UPDATE_ACK);
             }
             usbInput.received_bytes = 0;
@@ -113,13 +117,20 @@ int main(void) {
     SetupHardware();
     // We'll then enable global interrupts for our use.
     GlobalInterruptEnable();
+    enable_rx_isr();
     // Once that's done, we'll enter an infinite loop.
     for (;;)
     {
         // We need to run our task to process and deliver data for our IN and OUT endpoints.
-        HID_Task();
+        // HID_Task();
         // We also need to run the main USB management task.
         USB_USBTask();
+         if (state == SYNCED) {
+            LED_ON;
+         }
+         else{
+            LED_OFF;
+         }
     }
 }
 
@@ -128,10 +139,15 @@ void SetupHardware(void) {
     // We need to disable watchdog if enabled by bootloader/fuses.
     disable_watchdog();
 
+    LED_CONFIG;
+    LED_OFF;
+    
     // We need to disable clock division before initializing the USB hardware.
     clock_prescale_set(clock_div_1);
     // We can then initialize our hardware and peripherals, including the USB stack.
-    USART_Init(19200);
+    // USART_Init(19200);
+    USART_Init(31250);
+    // USART_Init(40000);
 
     // The USB stack should be initialized last.
     USB_Init();
@@ -164,6 +180,8 @@ void EVENT_USB_Device_ControlRequest(void) {
 
     // Not used here, it looks like we don't receive control request from the Switch.
 }
+
+#ifdef asdfasdf
 
 // Process and deliver data from IN and OUT endpoints.
 void HID_Task(void) {
@@ -205,7 +223,10 @@ void HID_Task(void) {
         disable_rx_isr();
         if (state == SYNCED) {                
             memcpy(&JoystickInputData, &buffer, sizeof(USB_JoystickReport_Input_t));
-            send_byte(RESP_USB_ACK);
+            if (send_USB_ack) {
+                send_byte(RESP_USB_ACK);
+                send_USB_ack = false;
+            }
         } else {
             memcpy(&JoystickInputData, &defaultBuf, sizeof(USB_JoystickReport_Input_t));
         }
@@ -218,3 +239,54 @@ void HID_Task(void) {
         Endpoint_ClearIN();
     }
 }
+
+#else
+    
+void HID_Task(void) {
+    // If the device isn't connected and properly configured, we can't do anything here.
+    if (USB_DeviceState != DEVICE_STATE_Configured)
+        return;
+
+    // We'll start with the OUT endpoint.
+    Endpoint_SelectEndpoint(JOYSTICK_OUT_EPADDR);
+    // We'll check to see if we received something on the OUT endpoint.
+    if (Endpoint_IsOUTReceived())
+    {
+        // If we did, and the packet has data, we'll react to it.
+        if (Endpoint_IsReadWriteAllowed())
+        {
+            // We'll create a place to store our data received from the host.
+            USB_JoystickReport_Output_t JoystickOutputData;
+
+            // We'll then take in that data, setting it up in our storage.
+            while(Endpoint_Read_Stream_LE(&JoystickOutputData, sizeof(JoystickOutputData), NULL) != ENDPOINT_RWSTREAM_NoError);
+
+            // At this point, we can react to this data.
+
+            // However, since we're not doing anything with this data, we abandon it.
+        }
+        // Regardless of whether we reacted to the data, we acknowledge an OUT packet on this endpoint.
+        Endpoint_ClearOUT();
+    }
+
+    // We'll then move on to the IN endpoint.
+    Endpoint_SelectEndpoint(JOYSTICK_IN_EPADDR);
+    // We first check to see if the host is ready to accept data.
+    if (Endpoint_IsINReady())
+    {
+        // We'll create an empty report.
+        USB_JoystickReport_Input_t JoystickInputData;
+
+        // We'll then populate this report with what we want to send to the host.
+        memcpy(&JoystickInputData, &buffer, sizeof(USB_JoystickReport_Input_t));
+
+        // Once populated, we can output this data to the host. We do this by first writing the data to the control stream.
+        while(Endpoint_Write_Stream_LE(&JoystickInputData, sizeof(JoystickInputData), NULL) != ENDPOINT_RWSTREAM_NoError);
+        
+        // We then send an IN packet on this endpoint.
+        Endpoint_ClearIN();
+    }
+    send_byte(RESP_USB_ACK);
+}
+
+#endif

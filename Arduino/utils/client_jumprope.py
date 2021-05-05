@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Client for sending controller commands to a controller emulator"""
+"""Client for sending controller commands to a controller emulator."""
 import sys
 import argparse
 import math
@@ -117,12 +117,28 @@ def rstick_angle(stick_angle, intensity):
     """Compute x and y based on angle and intensity for the right stick."""
     return (intensity + (stick_angle << 8)) << 44
 
-def p_wait(wait_time):
+def p_wait(wait_time, min_sleep_time=0.002, error_correction=0):
     """Wait x seconds (precise)."""
     t_0 = time.perf_counter()
-    t_1 = t_0
-    while t_1 - t_0 < wait_time:
-        t_1 = time.perf_counter()
+    corrected_wait_time = wait_time - error_correction
+    if corrected_wait_time > min_sleep_time:
+        time.sleep(corrected_wait_time - min_sleep_time)
+    t_1 = time.perf_counter()
+    t_2 = t_1
+    while t_2 - t_0 < corrected_wait_time:
+        t_2 = time.perf_counter()
+    return t_2 - t_0
+
+def p_timer(t_0, wait_time, min_sleep_time=0.002, error_correction=0):
+    """Pad time by x seconds (precise)."""
+    corrected_wait_time = wait_time - error_correction
+    t_1 = time.perf_counter()
+    if corrected_wait_time > min_sleep_time:
+        time.sleep(corrected_wait_time - min_sleep_time - (t_1 - t_0))
+    t_2 = time.perf_counter()
+    while t_2 - t_0 < corrected_wait_time:
+        t_2 = time.perf_counter()
+    return t_2 - t_0
 
 def wait_for_data(timeout=1.0, sleep_time=0.1):
     """Wait for data to be available on the serial port."""
@@ -190,9 +206,10 @@ def send_packet(packet=None,
                 debug=False):
     """Send a raw packet and wait for a response (CRC will be added automatically)."""
     if not packet:
-        packet=[0x00, 0x00, 0x08, 0x80, 0x80, 0x80, 0x80, 0x00]
+        packet = [0x00, 0x00, 0x08, 0x80, 0x80, 0x80, 0x80, 0x00]
 
     if not debug:
+        # t_0 = time.perf_counter()
         bytes_out = []
         bytes_out.extend(packet)
 
@@ -201,13 +218,17 @@ def send_packet(packet=None,
         for byte in packet:
             crc = crc8_ccitt(crc, byte)
         bytes_out.append(crc)
-        
+        # t_1 = time.perf_counter()
+
         # Purge input buffer, send bytes and wait for USB ACK or UPDATE NACK
         this.serial_session.reset_input_buffer()
         write_bytes(bytes_out)
-        byte_in = read_byte_latest()
+        # t2 = time.perf_counter()
+        byte_in = read_byte()
+        # t3 = time.perf_counter()
         success = (byte_in == RESP_USB_ACK)
-        
+        # print(bytes_out, byte_in)
+        # print("Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}', f'{((t2 - t_1) * 1000):4.6}', f'{((t3 - t2) * 1000):4.6}', f'{((t3 - t_0) * 1000):4.6}')
     else:
         success = True
     return success
@@ -263,7 +284,7 @@ def cmd_to_packet(command):
     right_x, right_y = angle(r_angle, r_intensity)
 
     packet = [high, low, dpad, left_x, left_y, right_x, right_y, 0x00]
-    # print (hex(command), packet, lstick_angle, lstick_intensity, rstick_angle, rstick_intensity)
+    # print(hex(command), packet, lstick_angle, lstick_intensity, rstick_angle, rstick_intensity)
     return packet
 
 def send_cmd(command=NO_INPUT):
@@ -431,7 +452,7 @@ def testbench_rstick():
     send_cmd(RSTICK_CENTER)
     p_wait(0.5)
 
-def testbench_packet_speed(count=100, debug=False):
+def testbench_packet_speed(count=100, sleep_time=0.050):
     """Test packet speed."""
     testbench_sum = 0
     testbench_min = 999
@@ -443,9 +464,16 @@ def testbench_packet_speed(count=100, debug=False):
 
         # Send packet and check time
         t_0 = time.perf_counter()
-        status = send_packet(debug)
-        t_1 = time.perf_counter()
 
+        if i % 2:
+            status = send_cmd(BTN_A)
+        else:
+            status = send_cmd(NO_INPUT)
+        t_1 = time.perf_counter()
+        p_wait(sleep_time)
+        t_2 = time.perf_counter()
+        # print(f'{((t_1 - t_0) * 1000):4.6}', f'{((t_2 - t_0) * 1000):4.6}')
+        print('%.6f' % ((t_1 - t_0)*1000), '%.6f' % ((t_2 - t_0)*1000))
         # Count errors
         if not status:
             err += 1
@@ -484,9 +512,9 @@ def force_sync():
 
 
     # Wait for serial data and read the last byte sent
-    bytes_in_waiting = wait_for_data()
+    wait_for_data()
     byte_in = read_byte_latest()
-    
+
     # Begin sync...
     in_sync = False
     if byte_in == RESP_SYNC_START:
@@ -523,8 +551,8 @@ def main(arguments):
     parser.add_argument('port', help="Serial Port")
     args = parser.parse_args(arguments)
 
-    this.serial_session = serial.Serial(port=args.port, baudrate=19200, timeout=1)
-    # this.serial_session = serial.Serial(port=args.port, baudrate=31250, timeout=1)
+    # this.serial_session = serial.Serial(port=args.port, baudrate=19200, timeout=1)
+    this.serial_session = serial.Serial(port=args.port, baudrate=31250, timeout=1)
     # this.serial_session = serial.Serial(port=args.port, baudrate=40000, timeout=1)
     # this.serial_session = serial.Serial(port=args.port, baudrate=62500, timeout=1)
 
@@ -535,20 +563,158 @@ def main(arguments):
     macro()
 
     # testbench()
-    # testbench_packet_speed(1000)
+    # testbench_packet_speed(100)
+
+    p_wait(1)
+    print(this.serial_session.in_waiting)
+    print(this.serial_session.read(this.serial_session.in_waiting))
 
     this.serial_session.close()
 
 def macro():
-    """Send button presses."""
-    
-    if not send_cmd(BTN_A + DPAD_U_R + LSTICK_U + RSTICK_D_L):
-        print('Packet Error!')
+    """FFIX Jumprope Macro. Use after a fresh Switch reboot."""
 
-    p_wait(0.05)
+    def send(command, duration=0):
+        if not send_cmd(command):
+            print('Packet Error on Press!')
+        p_wait(duration)
+        if not send_cmd(NO_INPUT):
+            print('Packet Error on Release!')
 
-    if not send_cmd():
-        print('Packet Error!')
+    def single_jump(jumps, jump_period, button_press_time, first_jump_time=0):
+        for jump in range(1, jumps + 1):
+            t_0 = time.perf_counter()
+            send(BTN_A, button_press_time)
+            t_1 = time.perf_counter()
+            if jump == 1 and first_jump_time > 0:
+                p_timer(t_0, first_jump_time, error_correction=0.0000019)
+                t_2 = time.perf_counter()
+                t_error = (jump_period/2) - t_2 - t_0
+            else:
+                p_timer(t_0, jump_period, error_correction=0.0000019)
+                t_2 = time.perf_counter()
+                t_error = abs(jump_period - (t_2 - t_0))
+            print(f'{jump:03}', "Time elapsed (ms): ",
+                  f'{((t_2 - t_0) * 1000):4.6}',
+                  f'{((t_1 - t_0) * 1000):4.6}',
+                  f'{((t_error) * 1000000):4.6}')
+
+    def double_jump(jumps, jump_period, button_press_time, first_jump_time=0):
+        for jump in range(1, jumps + 1):
+            t_0 = time.perf_counter()
+            send(BTN_A, button_press_time)
+            p_wait(0.05)
+            send(BTN_A, button_press_time)
+            t_1 = time.perf_counter()
+            if jump == 1 and first_jump_time > 0:
+                p_timer(t_0, first_jump_time, error_correction=0.0000019)
+            else:
+                p_timer(t_0, jump_period, error_correction=0.0000019)
+            t_2 = time.perf_counter()
+            print(f'{jump:03}', "Time elapsed (ms): ",
+                  f'{((t_2 - t_0) * 1000):4.6}',
+                  f'{((t_1 - t_0) * 1000):4.6}')
+
+    button_press_time = 0.05
+    button_delay1 = 0.670
+    button_delay2 = 0.532
+    button_delay3 = 0.466
+    button_delay4 = 0.433
+    button_delay5 = 0.383
+    button_delay6 = 0.400
+
+    t_0 = time.perf_counter()
+    print('Come play with us again -> Nothing')
+    send(BTN_A, button_press_time)
+    t_1 = time.perf_counter()
+    p_wait(3)
+    print("Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    t_0 = time.perf_counter()
+    print('Nothing -> You wanna try?')
+    send(BTN_A, button_press_time)
+    t_1 = time.perf_counter()
+    p_wait(3)
+    print("Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    t_0 = time.perf_counter()
+    print('You wanna try? -> 0')
+    send(BTN_A, button_press_time)
+    t_1 = time.perf_counter()
+    p_wait(3)
+    print("Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    single_jump(20, button_delay1, button_press_time, button_delay1 / 2)
+    print('Transitioning - 20-49')
+    single_jump(30, button_delay2, button_press_time)
+    print('Transitioning - 50 - 99')
+    single_jump(50, button_delay3, button_press_time)
+    print('Transitioning - 100-199')
+    single_jump(100, button_delay4, button_press_time)
+    print('Transitioning - 200-299')
+    double_jump(100, button_delay5, button_press_time, 0.360)
+    # double_jump(100, button_delay5, button_press_time, button_delay4)
+    print('Transitioning - 300+')
+    single_jump(2000, button_delay6, button_press_time, button_delay6 * 0.66)
+    print('Transitioning')
+
+    # print('Transitioning')
+
+    # count2 = 30
+    # end2 = end1 + count2
+    # for x in range(end1 + 1, end2 + 1):
+        # t_0 = time.perf_counter()
+        # send(BTN_A, button_press_time)
+        # p_timer(t_0, button_delay2)
+        # t_1 = time.perf_counter()
+        # print(f'{x:03}', "Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    # print('Transitioning')
+
+    # count3 = 50
+    # end3 = end2 + count3
+    # for x in range(end2 + 1, end3 + 1):
+        # t_0 = time.perf_counter()
+        # send(BTN_A, button_press_time)
+        # p_timer(t_0, button_delay3)
+        # t_1 = time.perf_counter()
+        # print(f'{x:03}', "Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    # print('Transitioning')
+
+    # count4 = 100
+    # end4 = end3 + count4
+    # for x in range(end3 + 1, end4 + 1):
+        # t_0 = time.perf_counter()
+        # send(BTN_A, button_press_time)
+        # p_timer(t_0, button_delay4)
+        # t_1 = time.perf_counter()
+        # print(f'{x:03}', "Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    # print('Transitioning')
+    # p_wait(0.385)
+
+    # count5 = 100
+    # end5 = end4 + count5
+    # for x in range(end4 + 1, end5 + 1):
+        # t_0 = time.perf_counter()
+        # send(BTN_A, button_press_time)
+        # send(BTN_A, button_press_time)
+        # if x != end5:
+            # p_wait(button_delay5)
+        # t_1 = time.perf_counter()
+        # print(f'{x:03}', "Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
+
+    # print('Transitioning')
+
+    # count6 = 1000
+    # end6 = end5 + count6
+    # for x in range(end5 + 1, end6 + 1):
+        # t_0 = time.perf_counter()
+        # send(BTN_A, button_press_time)
+        # p_timer(t_0, button_delay6)
+        # t_1 = time.perf_counter()
+        # print(f'{x:03}', "Time elapsed (ms): ", f'{((t_1 - t_0) * 1000):4.6}')
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

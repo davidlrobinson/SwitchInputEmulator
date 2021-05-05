@@ -119,7 +119,7 @@ void USART_Init(int baud);
 void disable_watchdog(void);
 void disable_rx_isr(void);
 void enable_rx_isr(void);
-void send_byte(uint8_t c);
+// void send_byte(uint8_t c);
 uint8_t recv_byte(void);
 void send_string(const char *str);
 

@@ -532,7 +532,11 @@ def main(arguments):
     if not sync():
         print('Could not sync!')
 
-    macro()
+    if not send_cmd():
+        print('Packet Error!')
+
+    
+    # macro()
 
     # testbench()
     # testbench_packet_speed(1000)
@@ -540,15 +544,30 @@ def main(arguments):
     this.serial_session.close()
 
 def macro():
-    """Send button presses."""
-    
-    if not send_cmd(BTN_A + DPAD_U_R + LSTICK_U + RSTICK_D_L):
+    if not send_cmd(BTN_LCLICK):
         print('Packet Error!')
-
     p_wait(0.05)
-
     if not send_cmd():
         print('Packet Error!')
+
+    t0 = time.perf_counter()
+    for x in range(5):
+        if not send_cmd(BTN_A):
+            print('Packet Error!')
+        p_wait(0.05)
+        if not send_cmd():
+            print('Packet Error!')
+        p_wait(0.05)
+        if not send_cmd(BTN_B):
+            print('Packet Error!')
+        p_wait(0.05)
+        if not send_cmd():
+            print('Packet Error!')
+        p_wait(0.05)
+    t1 = time.perf_counter()
+    print("Time elapsed (ms): ", f'{((t1 - t0) * 1000):4.6}')
+
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

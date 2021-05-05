@@ -12,7 +12,8 @@
 # Run "make help" for target help.
 
 # Set the MCU accordingly to your device (e.g. at90usb1286 for a Teensy 2.0++, or atmega16u2 for an Arduino UNO R3)
-MCU          = atmega16u2
+# MCU          = atmega16u2
+MCU          = at90usb1286
 ARCH         = AVR8
 F_CPU        = 16000000
 F_USB        = $(F_CPU)
@@ -27,13 +28,15 @@ LD_FLAGS     =
 
 EMULATOR_TARGET		= emulator
 EMULATOR_CC      	= gcc
-EMULATOR_CC_FLAGS   = -Iinclude/ -DMOCK_AVR
+EMULATOR_CC_FLAGS   = -Iinclude/ -DAVR
+# EMULATOR_CC_FLAGS   = -Iinclude/ -DMOCK_AVR
 EMULATOR_OBJ_DIR 	= emulator_obj
 EMULATOR_SRC_FILES := $(wildcard $(SRC_DIR)/*.c)
 EMULATOR_OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(EMULATOR_OBJ_DIR)/%.o,$(EMULATOR_SRC_FILES))
 
 # Default target
-all: $(EMULATOR_TARGET)
+# all: $(EMULATOR_TARGET)
+all:
 # Include LUFA build script makefiles
 include $(LUFA_PATH)/Build/lufa_core.mk
 include $(LUFA_PATH)/Build/lufa_sources.mk
