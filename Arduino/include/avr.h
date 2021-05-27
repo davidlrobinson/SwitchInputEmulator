@@ -21,7 +21,7 @@
 #define PRINT_DEBUG(...)
 
 // Initializes the USART, note that the RX/TX interrupts need to be enabled manually.
-void USART_Init(int baud) {
+void USART_Init(uint32_t baud) {
     UCSR1A = 0;                         // disable double speed mode
     UCSR1C = _BV(UCSZ11) | _BV(UCSZ10); // no parity, 8 data bits, 1 stop bit
     UCSR1D = 0;                         // no cts, no rts

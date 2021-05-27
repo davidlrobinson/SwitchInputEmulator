@@ -115,7 +115,7 @@ typedef struct {
 } USB_JoystickReport_Output_t;
 
 // Function Prototypes
-void USART_Init(int baud);
+void USART_Init(uint32_t baud);
 void disable_watchdog(void);
 void disable_rx_isr(void);
 void enable_rx_isr(void);
