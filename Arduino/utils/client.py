@@ -398,7 +398,7 @@ def sync():
 
 # -------------------------------------------------------------------------
 
-ser = serial.Serial(port=args.port, baudrate=19200,timeout=1)
+ser = serial.Serial(port=args.port, baudrate=1000000,timeout=1)
 # ser = serial.Serial(port=args.port, baudrate=31250,timeout=1)
 # ser = serial.Serial(port=args.port, baudrate=40000,timeout=1)
 # ser = serial.Serial(port=args.port, baudrate=62500,timeout=1)
