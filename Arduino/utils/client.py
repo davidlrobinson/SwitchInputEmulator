@@ -63,7 +63,7 @@ class Packet:
         return int((val + 1.0) / 2.0 * 255).to_bytes(1, byteorder='big')
 
     def __bytes__(self):
-        return sum(self.buttons).to_bytes(2, byteorder='big') + self.dpad.to_bytes(1, byteorder='big') + self.__class__.f2b(self.lx) + self.__class__.f2b(self.ly) + self.__class__.f2b(self.rx) + self.__class__.f2b(self.ry) + self.vendorspec
+        return sum(self.buttons).to_bytes(2, byteorder='big') + self.dpad.to_bytes(1, byteorder='big') + self.f2b(self.lx) + self.f2b(self.ly) + self.f2b(self.rx) + self.f2b(self.ry) + self.vendorspec
 
     def __repr__(self):
         return f"{self.__class__.__name__}(buttons={self.buttons!r}, dpad={self.dpad!r}, lx={self.lx!r}, ly={self.ly!r}, rx={self.rx!r}, ry={self.ry!r})"
