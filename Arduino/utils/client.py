@@ -1,55 +1,64 @@
 import time
+from enum import IntEnum
 import queue
-import serial
 import threading
+import serial
 import serial.tools.list_ports
 
-BUTTON_NONE      =   0x00
-BUTTON_Y         =   0x01
-BUTTON_B         =   0x02
-BUTTON_A         =   0x04
-BUTTON_X         =   0x08
-BUTTON_L         =   0x10
-BUTTON_R         =   0x20
-BUTTON_ZL        =   0x40
-BUTTON_ZR        =   0x80
-BUTTON_MINUS     =  0x100
-BUTTON_PLUS      =  0x200
-BUTTON_LCLICK    =  0x400
-BUTTON_RCLICK    =  0x800
-BUTTON_HOME      = 0x1000
-BUTTON_CAPTURE   = 0x2000
+class Button(IntEnum):
+    """"Buttons for packet"""
+    NONE = 0x00
+    Y = 0x01
+    B = 0x02
+    A = 0x04
+    X = 0x08
+    L = 0x10
+    R = 0x20
+    ZL = 0x40
+    ZR = 0x80
+    MINUS = 0x100
+    PLUS = 0x200
+    LCLICK = 0x400
+    RCLICK = 0x800
+    HOME = 0x1000
+    CAPTURE = 0x2000
 
-DPAD_UP          = 0x00
-DPAD_UP_RIGHT    = 0x01
-DPAD_RIGHT       = 0x02
-DPAD_DOWN_RIGHT  = 0x03
-DPAD_DOWN        = 0x04
-DPAD_DOWN_LEFT   = 0x05
-DPAD_LEFT        = 0x06
-DPAD_UP_LEFT     = 0x07
-DPAD_CENTER      = 0x08
+class Dpad(IntEnum):
+    """D-pad directions for packet"""
+    UP = 0x00
+    UP_RIGHT = 0x01
+    RIGHT = 0x02
+    DOWN_RIGHT = 0x03
+    DOWN = 0x04
+    DOWN_LEFT = 0x05
+    LEFT = 0x06
+    UP_LEFT = 0x07
+    CENTER = 0x08
 
-STICK_MIN        = -1.0
-STICK_CENTER     =  0.0
-STICK_MAX        =  1.0
+class Stick(IntEnum):
+    """Analog stick bounds for packet"""
+    MIN = -1.0
+    CENTER = 0.0
+    MAX = 1.0
 
-# Commands to send to MCU
-COMMAND_NOP        = 0x00
-COMMAND_SYNC_1     = 0x33
-COMMAND_SYNC_2     = 0xCC
-COMMAND_SYNC_START = 0xFF
+class Command(IntEnum):
+    """Commands to send to MCU"""
+    NOP = 0x00
+    SYNC_1 = 0x33
+    SYNC_2 = 0xCC
+    SYNC_START = 0xFF
 
-# Responses from MCU
-RESP_USB_ACK       = 0x90
-RESP_UPDATE_ACK    = 0x91
-RESP_UPDATE_NACK   = 0x92
-RESP_SYNC_START    = 0xFF
-RESP_SYNC_1        = 0xCC
-RESP_SYNC_OK       = 0x33
+class Resp(IntEnum):
+    """Responses from MCU"""
+    USB_ACK = 0x90
+    UPDATE_ACK = 0x91
+    UPDATE_NACK = 0x92
+    SYNC_START = 0xFF
+    SYNC_1 = 0xCC
+    SYNC_OK = 0x33
 
 class Packet:
-    def __init__(self, buttons=set(), dpad=DPAD_CENTER, lx=STICK_CENTER, ly=STICK_CENTER, rx=STICK_CENTER, ry=STICK_CENTER):
+    def __init__(self, buttons=set(), dpad=DPAD_CENTER, lx=Stick.CENTER, ly=Stick.CENTER, rx=Stick.CENTER, ry=Stick.CENTER):
         self.buttons = set(buttons)
         self.dpad = dpad
         self.lx = lx
@@ -60,6 +69,7 @@ class Packet:
 
     @staticmethod
     def f2b(val):
+        """"Convert float within [-1, 1] to byte."""
         return int((val + 1.0) / 2.0 * 255).to_bytes(1, byteorder='big')
 
     def __bytes__(self):
@@ -122,7 +132,7 @@ class Controller:
         self.send_cmd()
 
     def connect(self):
-        self.push_buttons(BUTTON_L, BUTTON_R, duration=1)
+        self.push_buttons(Button.L, Button.R, duration=1)
 
     def wait_for_data(self, timeout=1.0, sleep_time=0.1):
         """Wait for data to be available on the serial port."""
@@ -131,35 +141,35 @@ class Controller:
             time.sleep(sleep_time)
 
     def read_bytes(self, size):
-        """Read X bytes from the serial port (returns list)"""
+        """Read X bytes from the serial port (returns list)."""
         bytes_in = self.ser.read(size)
         return list(bytes_in)
 
     def read_byte(self):
-        """Read 1 byte from the serial port (returns int)"""
+        """Read 1 byte from the serial port (returns int)."""
         bytes_in = self.read_bytes(1)
         byte_in = bytes_in[0] if bytes_in else 0
         return byte_in
 
     def read_byte_latest(self):
-        """Discard all incoming bytes and read the last (latest) (returns int)"""
+        """Discard all incoming bytes and read the last (latest) (returns int)."""
         bytes_in_waiting = max(self.ser.in_waiting, 1)
         bytes_in = self.read_bytes(bytes_in_waiting)
         byte_in = bytes_in[-1] if bytes_in else 0
         return byte_in
 
     def write_bytes(self, bytes_out):
-        """Write bytes to the serial port"""
+        """Write bytes to the serial port."""
         self.ser.write(bytearray(bytes_out))
         while self.ser.out_waiting:
             pass
 
     def write_byte(self, byte_out):
-        """Write byte to the serial port"""
+        """Write byte to the serial port."""
         self.write_bytes([byte_out])
 
     def crc8_ccitt(self, old_crc, new_data):
-        """Compute CRC8
+        """Compute CRC8.
 
         See:
         https://www.microchip.com/webdoc/AVRLibcReferenceManual/group__util__crc_1gab27eaaef6d7fd096bd7d57bf3f9ba083.html"""
@@ -175,7 +185,7 @@ class Controller:
         return data
 
     def send_packet(self, packet=Packet()):
-        """Send a raw packet and wait for a response (CRC will be added automatically)"""
+        """Send a raw packet and wait for a response (CRC will be added automatically)."""
         bytes_out = bytearray(bytes(packet))
     
         # Compute CRC
@@ -189,21 +199,13 @@ class Controller:
         self.write_bytes(bytes_out)
         # Wait for USB ACK or UPDATE NACK
         byte_in = self.read_byte()
-        success = (byte_in == RESP_USB_ACK)
+        success = (byte_in == Resp.USB_ACK)
         return success
 
-    def run(self):
-        while True:
-            packet = self.q.get()
-            if packet is None:
-                break
-            self.send_packet(packet)
-            self.q.task_done()
-
     def force_sync(self):
-        """Force MCU to sync"""
+        """Force MCU to sync."""
         # Send 9x 0xFF's to fully flush out buffer on device
-        # Device will send back 0xFF (RESP_SYNC_START) when it is ready to sync
+        # Device will send back 0xFF (Resp.SYNC_START) when it is ready to sync
         self.write_bytes([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
 
         # Wait for serial data and read the last byte sent
@@ -212,18 +214,18 @@ class Controller:
 
         # Begin sync...
         in_sync = False
-        if byte_in == RESP_SYNC_START:
-            self.write_byte(COMMAND_SYNC_1)
+        if byte_in == Resp.SYNC_START:
+            self.write_byte(Command.SYNC_1)
             byte_in = self.read_byte()
-            if byte_in == RESP_SYNC_1:
-                self.write_byte(COMMAND_SYNC_2)
+            if byte_in == Resp.SYNC_1:
+                self.write_byte(Command.SYNC_2)
                 byte_in = self.read_byte()
-                if byte_in == RESP_SYNC_OK:
+                if byte_in == Resp.SYNC_OK:
                     in_sync = True
         return in_sync
 
     def sync(self):
-        """Start MCU syncing process"""
+        """Start MCU syncing process."""
         # Try sending a packet
         in_sync = self.send_packet()
         if not in_sync:
@@ -232,6 +234,14 @@ class Controller:
             if in_sync:
                 in_sync = self.send_packet()
         return in_sync
+        
+    def run(self):
+        while True:
+            packet = self.q.get()
+            if packet is None:
+                break
+            self.send_packet(packet)
+            self.q.task_done()
 
     def __enter__(self):
         print(f"Opening port {self.serial_port}")
@@ -253,9 +263,9 @@ if __name__ == '__main__':
         controller.send_packet()
         controller.wait(1)
         for _ in range(5):
-            controller.send_packet(Packet(lx=STICK_MIN, ly=STICK_MIN))
+            controller.send_packet(Packet(lx=Stick.MIN, ly=Stick.MIN))
             controller.wait(3)
-            controller.send_packet(Packet(lx=STICK_CENTER, ly=STICK_MAX))
+            controller.send_packet(Packet(lx=Stick.CENTER, ly=Stick.MAX))
             controller.wait(0.4)
             controller.send_packet()
             controller.wait(1)
@@ -263,10 +273,10 @@ if __name__ == '__main__':
         # controller.connect()
         # controller.send_cmd(duration=0.5)
         # # print("Resetting cursor...")
-        # controller.move_left_stick(STICK_MIN, STICK_MIN, duration=3)
+        # controller.move_left_stick(Stick.MIN, Stick.MIN, duration=3)
         # time.sleep(0.5)
         # for i in range(5):
         #     # print(f"Iteration {i}...")
-        #     controller.move_left_stick(STICK_CENTER, STICK_MAX, duration=0.4)
+        #     controller.move_left_stick(Stick.CENTER, Stick.MAX, duration=0.4)
         #     time.sleep(0.5)
-        #     controller.move_left_stick(STICK_MIN, STICK_MIN, duration=1)
+        #     controller.move_left_stick(Stick.MIN, Stick.MIN, duration=1)
