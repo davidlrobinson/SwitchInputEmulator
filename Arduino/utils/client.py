@@ -58,7 +58,7 @@ class Resp(IntEnum):
     SYNC_OK = 0x33
 
 class Packet:
-    def __init__(self, buttons=set(), dpad=DPAD_CENTER, lx=Stick.CENTER, ly=Stick.CENTER, rx=Stick.CENTER, ry=Stick.CENTER):
+    def __init__(self, buttons=set(), dpad=Dpad.CENTER, lx=Stick.CENTER, ly=Stick.CENTER, rx=Stick.CENTER, ry=Stick.CENTER):
         self.buttons = set(buttons)
         self.dpad = dpad
         self.lx = lx
