@@ -151,7 +151,8 @@ class Controller:
     def write_bytes(self, bytes_out):
         """Write bytes to the serial port"""
         self.ser.write(bytearray(bytes_out))
-        self.ser.flush()
+        while self.ser.out_waiting:
+            pass
 
     def write_byte(self, byte_out):
         """Write byte to the serial port"""
