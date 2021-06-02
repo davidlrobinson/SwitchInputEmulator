@@ -36,7 +36,7 @@ class Dpad(IntEnum):
     CENTER = 0x08
 
 class Stick(IntEnum):
-    """Analog stick bounds for packet"""
+    """Analog stick positions for packet"""
     MIN = -1.0
     CENTER = 0.0
     MAX = 1.0
@@ -77,7 +77,7 @@ class Packet:
 
     def __repr__(self):
         return f"{self.__class__.__name__}(buttons={self.buttons!r}, dpad={self.dpad!r}, lx={self.lx!r}, ly={self.ly!r}, rx={self.rx!r}, ry={self.ry!r})"
-    
+
 class Controller:
     def __init__(self, serial_port=None, vid=None, pid=None):
         if serial_port is None:
@@ -98,46 +98,17 @@ class Controller:
         return arduino_ports[0]
 
     @staticmethod
-    def wait(duration, min_sleep=0.01):
+    def sleep(duration, min_sleep=0.01):
         start = time.perf_counter()
         if duration > min_sleep:
             time.sleep(duration - min_sleep)
         while time.perf_counter() - start < duration:
             pass
 
-    def send_cmd(self, duration=None, **kwargs):
-        if duration is None:
-            self.q.put_nowait(Packet(**kwargs))
-        else:
-            self.q.put_nowait(Packet(**kwargs))
-            self.q.join()
-            self.wait(duration)
-            self.q.put_nowait(Packet())
-            self.q.join()
-        return self
-
-    def push_buttons(self, *buttons, duration=None):
-        self.send_cmd(buttons=buttons, duration=duration)
-
-    def push_dpad(self, dpad, duration=None):
-        self.send_cmd(dpad=dpad, duration=duration)
-
-    def move_left_stick(self, x, y, duration=None):
-        self.send_cmd(lx=x, ly=y, duration=duration)
-
-    def move_right_stick(self, x, y, duration=None):
-        self.send_cmd(rx=x, ry=y, duration=duration)
-
-    def reset(self):
-        self.send_cmd()
-
-    def connect(self):
-        self.push_buttons(Button.L, Button.R, duration=1)
-
     def wait_for_data(self, timeout=1.0, sleep_time=0.1):
         """Wait for data to be available on the serial port."""
-        t_0 = time.perf_counter()
-        while (time.perf_counter() - t_0 < timeout or self.ser.in_waiting == 0):
+        start = time.perf_counter()
+        while (time.perf_counter() - start < timeout or self.ser.in_waiting == 0):
             time.sleep(sleep_time)
 
     def read_bytes(self, size):
@@ -174,7 +145,7 @@ class Controller:
         See:
         https://www.microchip.com/webdoc/AVRLibcReferenceManual/group__util__crc_1gab27eaaef6d7fd096bd7d57bf3f9ba083.html"""
         data = old_crc ^ new_data
-
+        
         for _ in range(8):
             if (data & 0x80) != 0:
                 data = data << 1
@@ -187,7 +158,7 @@ class Controller:
     def send_packet(self, packet=Packet()):
         """Send a raw packet and wait for a response (CRC will be added automatically)."""
         bytes_out = bytearray(bytes(packet))
-    
+
         # Compute CRC
         crc = 0
         for byte in bytes_out:
@@ -199,8 +170,7 @@ class Controller:
         self.write_bytes(bytes_out)
         # Wait for USB ACK or UPDATE NACK
         byte_in = self.read_byte()
-        success = (byte_in == Resp.USB_ACK)
-        return success
+        return byte_in == Resp.USB_ACK
 
     def force_sync(self):
         """Force MCU to sync."""
@@ -234,14 +204,42 @@ class Controller:
             if in_sync:
                 in_sync = self.send_packet()
         return in_sync
+
+    def send_command(self, duration=None, **kwargs):
+        self.q.put_nowait((Packet(**kwargs), duration))
+        return self
+
+    def push_buttons(self, *buttons, duration=None):
+        return self.send_command(buttons=buttons, duration=duration)
+
+    def push_dpad(self, dpad, duration=None):
+        return self.send_command(dpad=dpad, duration=duration)
+
+    def move_left_stick(self, x, y, duration=None):
+        return self.send_command(lx=x, ly=y, duration=duration)
+
+    def move_right_stick(self, x, y, duration=None):
+        return self.send_command(rx=x, ry=y, duration=duration)
+
+    def reset(self, duration=None):
+        return self.send_command(duration=duration)
+
+    def connect(self):
+        return self.push_buttons(Button.L, Button.R, duration=0.1)
         
     def run(self):
         while True:
-            packet = self.q.get()
-            if packet is None:
+            item = self.q.get()
+            if item is None:
                 break
+            packet, duration = item
             self.send_packet(packet)
+            if duration is not None:
+                self.sleep(duration)
             self.q.task_done()
+
+    def join(self):
+        self.q.join()
 
     def __enter__(self):
         print(f"Opening port {self.serial_port}")
@@ -249,34 +247,25 @@ class Controller:
         if not self.sync():
             raise OSError("Failed to sync with MCU")
         self.q = queue.Queue()
-        # self.t = threading.Thread(target=self.run)
-        # self.t.start()
+        self.t = threading.Thread(target=self.run)
+        self.t.start()
         return self
 
     def __exit__(self, *args):
-        # self.q.put(None)
-        # self.t.join()
+        self.q.put(None)
+        self.t.join()
         self.ser.close()
 
 if __name__ == '__main__':
-    with Controller(vid=1027, pid=24577) as controller:
-        controller.send_packet()
-        controller.wait(1)
-        for _ in range(5):
-            controller.send_packet(Packet(lx=Stick.MIN, ly=Stick.MIN))
-            controller.wait(3)
-            controller.send_packet(Packet(lx=Stick.CENTER, ly=Stick.MAX))
-            controller.wait(0.4)
-            controller.send_packet()
-            controller.wait(1)
-
-        # controller.connect()
-        # controller.send_cmd(duration=0.5)
-        # # print("Resetting cursor...")
-        # controller.move_left_stick(Stick.MIN, Stick.MIN, duration=3)
-        # time.sleep(0.5)
-        # for i in range(5):
-        #     # print(f"Iteration {i}...")
-        #     controller.move_left_stick(Stick.CENTER, Stick.MAX, duration=0.4)
-        #     time.sleep(0.5)
-        #     controller.move_left_stick(Stick.MIN, Stick.MIN, duration=1)
+    # with Controller(vid=1027, pid=24577) as controller:
+    #     print("Connecting...")
+    #     controller.connect().reset(0.1).join()
+    #     print("Moving to top left corner...")
+    #     controller.move_left_stick(Stick.MIN, Stick.MIN, duration=3).reset(0.1).join()
+    #     print("Testing...")
+    #     for i in range(5):
+    #         print(f"Iteration {i}")
+    #         controller.move_left_stick(0, Stick.MAX, duration=0.4).reset(1).join()
+    #         controller.move_left_stick(Stick.MIN, Stick.MIN, duration=1).reset(0.1).join()
+        print("Done")
+        
