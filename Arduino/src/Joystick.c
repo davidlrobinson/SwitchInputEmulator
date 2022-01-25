@@ -83,6 +83,7 @@ ISR(USART1_RX_vect) {
                 buffer.RY = usbInput.input[6];
                 buffer.VendorSpec = usbInput.input[7];
                 // send_byte(RESP_UPDATE_ACK);
+				HID_Task();
             }
             usbInput.received_bytes = 0;
             usbInput.crc8_ccitt = 0;
@@ -113,11 +114,12 @@ int main(void) {
     SetupHardware();
     // We'll then enable global interrupts for our use.
     GlobalInterruptEnable();
+	enable_rx_isr();
     // Once that's done, we'll enter an infinite loop.
     for (;;)
     {
         // We need to run our task to process and deliver data for our IN and OUT endpoints.
-        HID_Task();
+        // HID_Task();
         // We also need to run the main USB management task.
         USB_USBTask();
     }
@@ -202,14 +204,7 @@ void HID_Task(void) {
         USB_JoystickReport_Input_t JoystickInputData;
 
         // We'll then populate this report with what we want to send to the host.
-        disable_rx_isr();
-        if (state == SYNCED) {                
-            memcpy(&JoystickInputData, &buffer, sizeof(USB_JoystickReport_Input_t));
-            send_byte(RESP_USB_ACK);
-        } else {
-            memcpy(&JoystickInputData, &defaultBuf, sizeof(USB_JoystickReport_Input_t));
-        }
-        enable_rx_isr();
+        memcpy(&JoystickInputData, &buffer, sizeof(USB_JoystickReport_Input_t));
 
         // Once populated, we can output this data to the host. We do this by first writing the data to the control stream.
         while(Endpoint_Write_Stream_LE(&JoystickInputData, sizeof(JoystickInputData), NULL) != ENDPOINT_RWSTREAM_NoError);
@@ -217,4 +212,5 @@ void HID_Task(void) {
         // We then send an IN packet on this endpoint.
         Endpoint_ClearIN();
     }
+	send_byte(RESP_USB_ACK);
 }
