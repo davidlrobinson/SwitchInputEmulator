@@ -5,8 +5,12 @@ import threading
 import serial
 import serial.tools.list_ports
 
+DELAY_PER_UPDATE = 0.001
+
+
 class Button(IntEnum):
-    """"Buttons for packet"""
+    """"Controller buttons."""
+
     NONE = 0x00
     Y = 0x01
     B = 0x02
@@ -23,8 +27,10 @@ class Button(IntEnum):
     HOME = 0x1000
     CAPTURE = 0x2000
 
+
 class Dpad(IntEnum):
-    """D-pad directions for packet"""
+    """Controller d-pad directions."""
+
     UP = 0x00
     UP_RIGHT = 0x01
     RIGHT = 0x02
@@ -35,21 +41,27 @@ class Dpad(IntEnum):
     UP_LEFT = 0x07
     CENTER = 0x08
 
+
 class Stick(IntEnum):
-    """Analog stick positions for packet"""
+    """Controller analog stick positions."""
+
     MIN = -1.0
     CENTER = 0.0
     MAX = 1.0
 
+
 class Command(IntEnum):
-    """Commands to send to MCU"""
+    """Commands to send to MCU."""
+
     NOP = 0x00
     SYNC_1 = 0x33
     SYNC_2 = 0xCC
     SYNC_START = 0xFF
 
+
 class Resp(IntEnum):
-    """Responses from MCU"""
+    """Responses from MCU."""
+
     USB_ACK = 0x90
     UPDATE_ACK = 0x91
     UPDATE_NACK = 0x92
@@ -57,26 +69,44 @@ class Resp(IntEnum):
     SYNC_1 = 0xCC
     SYNC_OK = 0x33
 
+
 class Packet:
-    def __init__(self, buttons=set(), dpad=Dpad.CENTER, lx=Stick.CENTER, ly=Stick.CENTER, rx=Stick.CENTER, ry=Stick.CENTER):
+    def __init__(
+        self,
+        buttons=set(),
+        dpad=Dpad.CENTER,
+        lx=Stick.CENTER,
+        ly=Stick.CENTER,
+        rx=Stick.CENTER,
+        ry=Stick.CENTER,
+    ):
         self.buttons = set(buttons)
         self.dpad = dpad
         self.lx = lx
         self.ly = ly
         self.rx = rx
         self.ry = ry
-        self.vendorspec = b'\x00'
+        self.vendorspec = b"\x00"
 
     @staticmethod
     def f2b(val):
         """"Convert float within [-1, 1] to byte."""
-        return int((val + 1.0) / 2.0 * 255).to_bytes(1, byteorder='big')
+        return int((val + 1.0) / 2.0 * 255).to_bytes(1, byteorder="big")
 
     def __bytes__(self):
-        return sum(self.buttons).to_bytes(2, byteorder='big') + self.dpad.to_bytes(1, byteorder='big') + self.f2b(self.lx) + self.f2b(self.ly) + self.f2b(self.rx) + self.f2b(self.ry) + self.vendorspec
+        return (
+            sum(self.buttons).to_bytes(2, byteorder="big")
+            + self.dpad.to_bytes(1, byteorder="big")
+            + self.f2b(self.lx)
+            + self.f2b(self.ly)
+            + self.f2b(self.rx)
+            + self.f2b(self.ry)
+            + self.vendorspec
+        )
 
     def __repr__(self):
         return f"{self.__class__.__name__}(buttons={self.buttons!r}, dpad={self.dpad!r}, lx={self.lx!r}, ly={self.ly!r}, rx={self.rx!r}, ry={self.ry!r})"
+
 
 class Controller:
     def __init__(self, serial_port=None, vid=None, pid=None):
@@ -108,7 +138,7 @@ class Controller:
     def wait_for_data(self, timeout=1.0, sleep_time=0.1):
         """Wait for data to be available on the serial port."""
         start = time.perf_counter()
-        while (time.perf_counter() - start < timeout or self.ser.in_waiting == 0):
+        while time.perf_counter() - start < timeout or self.ser.in_waiting == 0:
             time.sleep(sleep_time)
 
     def read_bytes(self, size):
@@ -145,14 +175,14 @@ class Controller:
         See:
         https://www.microchip.com/webdoc/AVRLibcReferenceManual/group__util__crc_1gab27eaaef6d7fd096bd7d57bf3f9ba083.html"""
         data = old_crc ^ new_data
-        
+
         for _ in range(8):
             if (data & 0x80) != 0:
                 data = data << 1
                 data = data ^ 0x07
             else:
                 data = data << 1
-            data = data & 0xff
+            data = data & 0xFF
         return data
 
     def send_packet(self, packet=Packet()):
@@ -226,14 +256,19 @@ class Controller:
 
     def connect(self):
         return self.push_buttons(Button.L, Button.R, duration=0.1)
-        
+
     def run(self):
         while True:
             item = self.q.get()
             if item is None:
                 break
             packet, duration = item
+
+            while time.perf_counter() - self.last_update < DELAY_PER_UPDATE:
+                pass
             self.send_packet(packet)
+            self.last_update = time.perf_counter()
+
             if duration is not None:
                 self.sleep(duration)
             self.q.task_done()
@@ -243,10 +278,12 @@ class Controller:
 
     def __enter__(self):
         print(f"Opening port {self.serial_port}")
-        self.ser = serial.Serial(self.serial_port, 1000000, timeout=1)
+        self.ser = serial.Serial(self.serial_port, 1_000_000, timeout=1)
         if not self.sync():
             raise OSError("Failed to sync with MCU")
+
         self.q = queue.Queue()
+        self.last_update = time.perf_counter()
         self.t = threading.Thread(target=self.run)
         self.t.start()
         return self
@@ -256,16 +293,15 @@ class Controller:
         self.t.join()
         self.ser.close()
 
-if __name__ == '__main__':
-    # with Controller(vid=1027, pid=24577) as controller:
-    #     print("Connecting...")
-    #     controller.connect().reset(0.1).join()
-    #     print("Moving to top left corner...")
-    #     controller.move_left_stick(Stick.MIN, Stick.MIN, duration=3).reset(0.1).join()
-    #     print("Testing...")
-    #     for i in range(5):
-    #         print(f"Iteration {i}")
-    #         controller.move_left_stick(0, Stick.MAX, duration=0.4).reset(1).join()
-    #         controller.move_left_stick(Stick.MIN, Stick.MIN, duration=1).reset(0.1).join()
+
+if __name__ == "__main__":
+    with Controller(vid=1027, pid=24577) as controller:
+        print("Connecting...")
+        controller.connect().reset(0.1).join()
+        print("Moving to top left corner...")
+        controller.move_left_stick(Stick.MIN, Stick.MIN, duration=3).reset(0.1).join()
+        print("Testing...")
+        for i in range(5):
+            print(f"Iteration {i}")
+            controller.move_left_stick(0, Stick.MAX, duration=0.4).reset(1).move_left_stick(Stick.MIN, Stick.MIN, duration=1).reset(0.1).join()
         print("Done")
-        
